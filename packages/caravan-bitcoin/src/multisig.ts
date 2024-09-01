@@ -115,10 +115,16 @@ export function generateMultisigFromRaw(addressType, multisig) {
       return payments.p2sh({ redeem: multisig });
     case P2SH_P2WSH:
       return payments.p2sh({
-        redeem: payments.p2wsh({ redeem: multisig }),
+        redeem: payments.p2wsh({
+          redeem: multisig,
+          witness: [multisig.output],
+        }),
       });
     case P2WSH:
-      return payments.p2wsh({ redeem: multisig });
+      return payments.p2wsh({
+        redeem: multisig,
+        witness: [multisig.output],
+      });
     default:
       return null;
   }
