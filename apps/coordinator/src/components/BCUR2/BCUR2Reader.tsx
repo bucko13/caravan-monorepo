@@ -4,7 +4,7 @@ import { ExtendedPublicKeyData, BCUR2Decoder } from "@caravan/wallets";
 import { BitcoinNetwork } from "@caravan/bitcoin";
 import { QrReader } from "react-qr-reader";
 
-type ScanMode = "xpub" | "psbt";
+type ScanMode = "xpub" | "psbt" | "text";
 
 interface BCUR2ReaderBaseProps {
   onStart?: () => void;
@@ -26,9 +26,23 @@ interface BCUR2ReaderPSBTProps extends BCUR2ReaderBaseProps {
   network?: BitcoinNetwork; // Optional for PSBT mode
 }
 
-type BCUR2ReaderProps = BCUR2ReaderXPubProps | BCUR2ReaderPSBTProps;
+// Plain-text mode: forwards the first non-empty raw QR scan to onSuccess
+// without going through BCUR2Decoder. Required for airgap sign-message
+// flows where devices respond with a bare base64 signature (no UR framing).
+// No `network` prop — text mode bypasses the decoder and has no
+// network-dependent behavior.
+interface BCUR2ReaderTextProps extends BCUR2ReaderBaseProps {
+  mode: "text";
+  onSuccess: (text: string) => void;
+}
 
-// Type-safe decoder function based on mode
+type BCUR2ReaderProps =
+  | BCUR2ReaderXPubProps
+  | BCUR2ReaderPSBTProps
+  | BCUR2ReaderTextProps;
+
+// Type-safe decoder function based on mode. Not called for "text" mode,
+// which bypasses BCUR2Decoder entirely.
 const createDecodeHandler = (mode: ScanMode, network?: BitcoinNetwork) => {
   if (mode === "xpub") {
     return (decoder: BCUR2Decoder) => {
@@ -88,6 +102,8 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
     [props.mode, props.mode === "xpub" ? props.network : undefined],
   );
 
+  const isTextMode = props.mode === "text";
+
   const startScanning = useCallback(() => {
     setIsScanning(true);
     setError("");
@@ -110,6 +126,22 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
   const handleScan = useCallback(
     (result: any) => {
       if (!result?.text || statusRef.current !== "scanning") return;
+
+      // Plain-text mode short-circuits the UR decoder: the first
+      // non-empty scan is forwarded verbatim to the caller, which is
+      // responsible for any envelope/cryptographic validation. Used by
+      // airgap sign-message flows whose response is a bare base64 sig.
+      // Any exception raised by the caller propagates — it belongs to
+      // the caller's flow, not the reader.
+      if (isTextMode) {
+        statusRef.current = "success";
+        setIsScanning(false);
+        setProgress("");
+        setProgressValue(0);
+        decoder.reset();
+        (props.onSuccess as (text: string) => void)(result.text);
+        return;
+      }
 
       try {
         decoder.receivePart(result.text);
@@ -158,12 +190,14 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
         setProgressValue(0);
       }
     },
-    [decoder, decodeHandler, props],
+    [decoder, decodeHandler, isTextMode, props],
   );
 
   const getInfoText = () => {
     if (props.mode === "xpub") {
       return "Scan the QR code sequence from your device to import the extended public key.";
+    } else if (props.mode === "text") {
+      return "Scan the signed-message QR code from your device.";
     } else {
       return "Scan the signed PSBT QR code sequence from your device.";
     }
