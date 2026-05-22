@@ -21,6 +21,7 @@ import {
   BCUR2,
   BCUR2ExportExtendedPublicKey,
   BCUR2EncodeTransaction,
+  BCUR2SignMessage,
   BCUR2SignMultisigTransaction,
   BCUR2RegisterWalletPolicy,
   BCUR2ConfirmMultisigAddress,
@@ -92,7 +93,7 @@ export const VERSION: string = version;
 
 export { MULTISIG_ROOT } from "./constants";
 
-export { wrapSdkError } from "./errors";
+export { wrapAsMessageSigningError, wrapSdkError } from "./errors";
 
 // Re-export so consumers don't need to depend on the internal
 // @caravan/messages package directly.
@@ -242,7 +243,8 @@ export function ExportPublicKey({
  * returns a canonical `SignMessageResult` (BIP-137 wire form).
  *
  * Supported keystores: Ledger (legacy + v2 Bitcoin apps), Trezor,
- * Jade, BitBox, Coldcard.
+ * Jade, Coldcard, BCUR2 (airgap QR signers). BitBox is rejected at
+ * caravan's BIP-48 cosigner paths — see UnsupportedInteraction below.
  */
 export function SignMessage({
   keystore,
@@ -259,6 +261,12 @@ export function SignMessage({
 }) {
   validateMessage(message, keystore);
   switch (keystore) {
+    case BCUR2:
+      return new BCUR2SignMessage({
+        bip32Path,
+        message,
+        pubkey,
+      });
     case COLDCARD:
       return new ColdcardSignMessage({
         bip32Path,

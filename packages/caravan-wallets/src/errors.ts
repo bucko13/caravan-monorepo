@@ -1,4 +1,36 @@
-import { MessageSigningError, verifyMessageSignature } from "@caravan/messages";
+import {
+  type MessageSigningErrorKind,
+  MessageSigningError,
+  verifyMessageSignature,
+} from "@caravan/messages";
+
+/**
+ * Wrap an arbitrary throw as a `MessageSigningError` with an explicit
+ * `kind`. Pass-through for existing `MessageSigningError` instances so
+ * callers can layer this around helpers that may themselves throw
+ * either plain `Error` or a pre-classified `MessageSigningError`.
+ *
+ * Use this when the failure mode is known (envelope validation,
+ * input precondition, etc.) — distinct from `wrapSdkError`, which
+ * classifies unknown transport-layer SDK throws.
+ */
+export function wrapAsMessageSigningError(args: {
+  keystore: string;
+  kind: MessageSigningErrorKind;
+  err: unknown;
+}): MessageSigningError {
+  const { keystore, kind, err } = args;
+  if (err instanceof MessageSigningError) {
+    return err;
+  }
+  const userMessage = err instanceof Error ? err.message : String(err);
+  return new MessageSigningError({
+    kind,
+    keystore,
+    userMessage,
+    cause: err,
+  });
+}
 
 /**
  * Translate a raw SDK throw into a `MessageSigningError`. Existing
