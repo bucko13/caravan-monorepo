@@ -1,4 +1,4 @@
-import { BCUR2Encoder } from "../encoder";
+import { BCUR2Encoder, BCUR2_TEXT_MAX_LENGTH } from "../encoder";
 
 // Simple unit tests focused on dependency injection patterns
 describe("BCUR2Encoder Dependency Injection", () => {
@@ -88,16 +88,99 @@ describe("BCUR2Encoder Dependency Injection", () => {
       expect(encoder2.maxFragmentLength).toBe(300);
     });
 
-    it("should encode bytes registry type", () => {
+  });
+
+  describe("Registry Type Selection", () => {
+    it("encodes bytes registry type", () => {
       const encoder = new BCUR2Encoder("placehodler", 21, "bytes");
       const result = encoder.qrFragments;
       expect(result).toBeDefined();
       expect(result.length).toBe(1);
     });
 
-    it("should throws on unknown type", () => {
+    it("throws on unknown registry type", () => {
       expect(() => new BCUR2Encoder("invalid", 21, "other" as any)).toThrow(
         "Unsupported registry type",
+      );
+    });
+  });
+
+  describe("Text Mode", () => {
+    it("emits a single QR frame containing the verbatim input", () => {
+      const payload = "signmessage m/48'/1'/0'/2'/0/0 ascii:hello";
+      const encoder = new BCUR2Encoder(payload, 100, "text");
+
+      expect(encoder.qrFragments).toEqual([payload]);
+      expect(encoder.estimateFragmentCount()).toBe(1);
+    });
+
+    it("ignores maxFragmentLength in text mode", () => {
+      const payload = "x".repeat(300);
+      const encoder = new BCUR2Encoder(payload, 50, "text");
+
+      expect(encoder.qrFragments).toHaveLength(1);
+      expect(encoder.qrFragments[0]).toBe(payload);
+    });
+
+    it("does not strip surrounding whitespace from the payload", () => {
+      const payload = "  signmessage m/0/0 ascii:hi  ";
+      const encoder = new BCUR2Encoder(payload, 100, "text");
+
+      expect(encoder.qrFragments[0]).toBe(payload);
+    });
+
+    it("throws when payload exceeds single-QR capacity", () => {
+      const oversized = "x".repeat(BCUR2_TEXT_MAX_LENGTH + 1);
+
+      expect(() => new BCUR2Encoder(oversized, 100, "text")).toThrow(
+        /exceeds single-QR capacity/,
+      );
+    });
+
+    it("accepts a payload exactly at the capacity ceiling", () => {
+      const atLimit = "x".repeat(BCUR2_TEXT_MAX_LENGTH);
+
+      const encoder = new BCUR2Encoder(atLimit, 100, "text");
+
+      expect(encoder.qrFragments[0]).toHaveLength(BCUR2_TEXT_MAX_LENGTH);
+    });
+
+    it("rejects a reassignment that exceeds capacity", () => {
+      const encoder = new BCUR2Encoder("short", 100, "text");
+
+      expect(() => {
+        encoder.data = "x".repeat(BCUR2_TEXT_MAX_LENGTH + 1);
+      }).toThrow(/exceeds single-QR capacity/);
+      expect(encoder.data).toBe("short");
+    });
+
+    it("allows reassignment within capacity", () => {
+      const encoder = new BCUR2Encoder("short", 100, "text");
+      const replacement = "x".repeat(BCUR2_TEXT_MAX_LENGTH);
+
+      encoder.data = replacement;
+
+      expect(encoder.data).toBe(replacement);
+      expect(encoder.qrFragments).toEqual([replacement]);
+    });
+
+    it("encodePSBT() throws on a text-mode encoder", () => {
+      const encoder = new BCUR2Encoder("signmessage m/0/0 ascii:hi", 100, "text");
+
+      expect(() => encoder.encodePSBT()).toThrow(
+        /encodePSBT called on a "text"-mode encoder/,
+      );
+    });
+
+    it("measures capacity in UTF-8 bytes, not UTF-16 code units", () => {
+      // Each "€" is 3 bytes in UTF-8 but 1 code unit in UTF-16. A
+      // string of 200 euro signs is 200 code units (below the 500
+      // ceiling in JS string length) but 600 bytes (above the QR
+      // byte-mode ceiling).
+      const oversized = "€".repeat(200);
+      expect(oversized.length).toBeLessThanOrEqual(BCUR2_TEXT_MAX_LENGTH);
+      expect(() => new BCUR2Encoder(oversized, 100, "text")).toThrow(
+        /exceeds single-QR capacity/,
       );
     });
   });
