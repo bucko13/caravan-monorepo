@@ -23,14 +23,17 @@ import {
   P2WSH,
   BitcoinNetwork,
 } from "@caravan/bitcoin";
-import { type SignMessageResult, MessageSigningError } from "@caravan/messages";
+import {
+  type SignMessageResult,
+  assertSignatureVerifies,
+  MessageSigningError,
+} from "@caravan/messages";
 import {
   convertLegacyInput,
   convertLegacyOutput,
   getUnsignedMultisigPsbtV0,
 } from "@caravan/psbt";
 
-import { assertSignatureVerifies } from "./errors";
 import {
   IndirectKeystoreInteraction,
   PENDING,

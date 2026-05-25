@@ -1,4 +1,35 @@
-import { MessageSigningError, verifyMessageSignature } from "@caravan/messages";
+import {
+  type MessageSigningErrorKind,
+  MessageSigningError,
+} from "@caravan/messages";
+
+/**
+ * Wrap an arbitrary throw as a `MessageSigningError` with an explicit
+ * `kind`. Pass-through for existing `MessageSigningError` instances so
+ * callers can layer this around helpers that may themselves throw
+ * either plain `Error` or a pre-classified `MessageSigningError`.
+ *
+ * Use this when the failure mode is known (envelope validation,
+ * input precondition, etc.) — distinct from `wrapSdkError`, which
+ * classifies unknown transport-layer SDK throws.
+ */
+export function wrapAsMessageSigningError(args: {
+  keystore: string;
+  kind: MessageSigningErrorKind;
+  err: unknown;
+}): MessageSigningError {
+  const { keystore, kind, err } = args;
+  if (err instanceof MessageSigningError) {
+    return err;
+  }
+  const userMessage = err instanceof Error ? err.message : String(err);
+  return new MessageSigningError({
+    kind,
+    keystore,
+    userMessage,
+    cause: err,
+  });
+}
 
 /**
  * Translate a raw SDK throw into a `MessageSigningError`. Existing
@@ -35,23 +66,3 @@ export function wrapSdkError(
   });
 }
 
-/**
- * Throw `MalformedResponse` if the signature a device just produced
- * doesn't recover to the cosigner pubkey at the path we asked it to
- * sign at. Surfaces "wrong wallet loaded" / "firmware bug" failures
- * at the keystore boundary, before the SignMessageResult escapes to a downstream
- * consumer that would see only a silent verify=false.
- */
-export function assertSignatureVerifies(
-  keystore: string,
-  args: { message: string; signature: string; pubkey: string },
-): void {
-  if (!verifyMessageSignature(args)) {
-    throw new MessageSigningError({
-      kind: "MalformedResponse",
-      keystore,
-      userMessage:
-        "Device returned a signature that doesn't verify against the cosigner pubkey at this path.",
-    });
-  }
-}

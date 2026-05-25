@@ -4,7 +4,7 @@ import { ExtendedPublicKeyData, BCUR2Decoder } from "@caravan/wallets";
 import { BitcoinNetwork } from "@caravan/bitcoin";
 import { QrReader } from "react-qr-reader";
 
-type ScanMode = "xpub" | "psbt";
+type ScanMode = "xpub" | "psbt" | "text";
 
 interface BCUR2ReaderBaseProps {
   onStart?: () => void;
@@ -26,9 +26,25 @@ interface BCUR2ReaderPSBTProps extends BCUR2ReaderBaseProps {
   network?: BitcoinNetwork; // Optional for PSBT mode
 }
 
-type BCUR2ReaderProps = BCUR2ReaderXPubProps | BCUR2ReaderPSBTProps;
+// Plain-text mode: forwards the first non-empty raw QR scan to onSuccess
+// without going through BCUR2Decoder. Required for airgap flows where the
+// device's response is a single bare payload with no UR framing
+// (sign-message today; other plain-text exchanges in the future).
+// Callers own the semantics of the payload — supply `startText` to label
+// what is being scanned. No `network` prop — text mode bypasses the
+// decoder and has no network-dependent behavior.
+interface BCUR2ReaderTextProps extends BCUR2ReaderBaseProps {
+  mode: "text";
+  onSuccess: (text: string) => void;
+}
 
-// Type-safe decoder function based on mode
+type BCUR2ReaderProps =
+  | BCUR2ReaderXPubProps
+  | BCUR2ReaderPSBTProps
+  | BCUR2ReaderTextProps;
+
+// Type-safe decoder function based on mode. Not called for "text" mode,
+// which bypasses BCUR2Decoder entirely.
 const createDecodeHandler = (mode: ScanMode, network?: BitcoinNetwork) => {
   if (mode === "xpub") {
     return (decoder: BCUR2Decoder) => {
@@ -88,6 +104,8 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
     [props.mode, props.mode === "xpub" ? props.network : undefined],
   );
 
+  const isTextMode = props.mode === "text";
+
   const startScanning = useCallback(() => {
     setIsScanning(true);
     setError("");
@@ -110,6 +128,22 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
   const handleScan = useCallback(
     (result: any) => {
       if (!result?.text || statusRef.current !== "scanning") return;
+
+      // Plain-text mode short-circuits the UR decoder: the first
+      // non-empty scan is forwarded verbatim to the caller, which is
+      // responsible for any envelope/cryptographic validation. Used by
+      // airgap sign-message flows whose response is a bare base64 sig.
+      // Any exception raised by the caller propagates — it belongs to
+      // the caller's flow, not the reader.
+      if (isTextMode) {
+        statusRef.current = "success";
+        setIsScanning(false);
+        setProgress("");
+        setProgressValue(0);
+        decoder.reset();
+        (props.onSuccess as (text: string) => void)(result.text);
+        return;
+      }
 
       try {
         decoder.receivePart(result.text);
@@ -158,12 +192,14 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
         setProgressValue(0);
       }
     },
-    [decoder, decodeHandler, props],
+    [decoder, decodeHandler, isTextMode, props],
   );
 
   const getInfoText = () => {
     if (props.mode === "xpub") {
       return "Scan the QR code sequence from your device to import the extended public key.";
+    } else if (props.mode === "text") {
+      return "Scan the QR code from your device.";
     } else {
       return "Scan the signed PSBT QR code sequence from your device.";
     }
@@ -221,7 +257,25 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
               >
                 <QrReader
                   onResult={handleScan}
-                  constraints={{ facingMode: "environment" }}
+                  constraints={{
+                    facingMode: "environment",
+                    // Default capture is often 640x480; dense base64
+                    // single-frame QRs and tight UR fragments need
+                    // more pixels for reliable decode at hand-held
+                    // distance. UA falls back if 1080p is unavailable.
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    // Without continuous focus the camera locks on
+                    // initialization and won't re-focus as the user
+                    // adjusts distance. Browser may ignore if the
+                    // device doesn't support it.
+                    // `focusMode` isn't in the standard
+                    // MediaTrackConstraintSet TypeScript definition but
+                    // is implemented by Chromium and Safari.
+                    advanced: [
+                      { focusMode: "continuous" } as unknown,
+                    ] as MediaTrackConstraintSet[],
+                  }}
                   containerStyle={{
                     width: "100%",
                     height: "100%",
@@ -229,7 +283,10 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
                     justifyContent: "center",
                     alignItems: "center",
                   }}
-                  scanDelay={200}
+                  // Decode every ~50ms (≈20 fps) instead of the prior
+                  // 200ms (5 fps). handleScan early-returns on frames
+                  // with no decoded text, so the overhead is bounded.
+                  scanDelay={50}
                 />
               </Box>
 

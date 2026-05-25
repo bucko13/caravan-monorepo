@@ -42,7 +42,10 @@ import {
   extractFingerprintFromBip380Descriptor,
   Network,
 } from "@caravan/bitcoin";
-import type { SignMessageResult } from "@caravan/messages";
+import {
+  type SignMessageResult,
+  assertSignatureVerifies,
+} from "@caravan/messages";
 import { translatePSBT } from "@caravan/psbt";
 import {
   GetPublicKey,
@@ -59,7 +62,7 @@ import { BigNumber } from "bignumber.js";
 import { ECPair, payments, Payment } from "bitcoinjs-lib";
 
 import { MULTISIG_ROOT } from "./constants";
-import { assertSignatureVerifies, wrapSdkError } from "./errors";
+import { wrapSdkError } from "./errors";
 import {
   DirectKeystoreInteraction,
   PENDING,

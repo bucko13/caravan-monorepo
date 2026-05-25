@@ -1,4 +1,4 @@
-import { Network } from "@caravan/bitcoin";
+import { Network, TEST_FIXTURES } from "@caravan/bitcoin";
 import { mockDeep, MockProxy } from "vitest-mock-extended";
 
 import { ExtendedPublicKeyData, BCUR2Decoder } from "../decoder";
@@ -7,6 +7,7 @@ import {
   BCUR2Interaction,
   BCUR2ExportExtendedPublicKey,
   BCUR2EncodeTransaction,
+  BCUR2SignMessage,
   BCUR2SignMultisigTransaction,
 } from "../interactions";
 
@@ -866,4 +867,125 @@ describe("BCUR2 Interactions", () => {
       });
     });
   });
+
+  // The module-level `vi.mock("../encoder", ...)` above replaces the
+  // BCUR2Encoder constructor with a stub that has no `qrFragments`
+  // getter, so BCUR2SignMessage tests below inject their own
+  // encoderFactory rather than relying on the default constructor.
+  describe("BCUR2SignMessage", () => {
+    const FIXTURE = TEST_FIXTURES.multisigs[0];
+    const otherPubkey = FIXTURE.publicKeys.find(
+      (pk) => pk !== FIXTURE.publicKey,
+    )!;
+
+    const stubEncoderFactory = (data: string): BCUR2Encoder =>
+      ({
+        qrFragments: [data],
+        estimateFragmentCount: () => 1,
+      }) as unknown as BCUR2Encoder;
+
+    type SignMessageArgs = ConstructorParameters<typeof BCUR2SignMessage>[0];
+
+    const makeInteraction = (overrides: Partial<SignMessageArgs> = {}) =>
+      new BCUR2SignMessage({
+        bip32Path: FIXTURE.bip32Path,
+        message: FIXTURE.signedMessages.message,
+        pubkey: FIXTURE.publicKey,
+        encoderFactory: stubEncoderFactory,
+        ...overrides,
+      });
+
+    it("sets workflow to ['request', 'parse']", () => {
+      expect(makeInteraction().workflow).toEqual(["request", "parse"]);
+    });
+
+    it("throws MalformedRequest on non-ASCII messages", () => {
+      expect(() => makeInteraction({ message: "café" })).toThrow(
+        expect.objectContaining({
+          name: "MessageSigningError",
+          kind: "MalformedRequest",
+          keystore: "bcur2",
+          userMessage: expect.stringMatching(/printable ASCII/),
+        }),
+      );
+    });
+
+    it("throws MalformedRequest when the encoder rejects an oversized payload", () => {
+      const throwingFactory: typeof stubEncoderFactory = () => {
+        throw new Error(
+          "Text-mode payload exceeds single-QR capacity (600 > 500).",
+        );
+      };
+      expect(() =>
+        makeInteraction({ encoderFactory: throwingFactory }),
+      ).toThrow(
+        expect.objectContaining({
+          name: "MessageSigningError",
+          kind: "MalformedRequest",
+        }),
+      );
+    });
+
+    it("emits a single-frame QR carrying the Specter ASCII payload", () => {
+      const { qrCodeFrames, fragmentCount } = makeInteraction().request();
+      expect(fragmentCount).toBe(1);
+      expect(qrCodeFrames).toEqual([
+        `signmessage ${FIXTURE.bip32Path} ascii:${FIXTURE.signedMessages.message}`,
+      ]);
+    });
+
+    it("returns a verified SignMessageResult for a BIP-137 fixture signature", () => {
+      expect(makeInteraction().parse(FIXTURE.signedMessages.bip137)).toEqual({
+        bip32Path: FIXTURE.bip32Path,
+        signature: FIXTURE.signedMessages.bip137,
+        pubkey: FIXTURE.publicKey,
+      });
+    });
+
+    it("returns a verified SignMessageResult for a BIP-322 Simple fixture signature", () => {
+      expect(makeInteraction().parse(FIXTURE.signedMessages.bip322)).toEqual({
+        bip32Path: FIXTURE.bip32Path,
+        signature: FIXTURE.signedMessages.bip322,
+        pubkey: FIXTURE.publicKey,
+      });
+    });
+
+    it("strips surrounding whitespace from the scanned response", () => {
+      const scanned = `\n  ${FIXTURE.signedMessages.bip137}\n`;
+      expect(makeInteraction().parse(scanned).signature).toBe(
+        FIXTURE.signedMessages.bip137,
+      );
+    });
+
+    it.each([
+      ["empty scan", ""],
+      ["whitespace-only scan", "   "],
+      ["non-base64 scan", "not base64!!!"],
+      ["oversized scan", "A".repeat(1000)],
+    ])(
+      "throws MalformedResponse on %s",
+      (_label: string, scanned: string) => {
+        expect(() => makeInteraction().parse(scanned)).toThrow(
+          expect.objectContaining({
+            name: "MessageSigningError",
+            kind: "MalformedResponse",
+            keystore: "bcur2",
+          }),
+        );
+      },
+    );
+
+    it("throws MalformedResponse when the signature does not verify against pubkey", () => {
+      // Base64-shaped but signed by a different cosigner.
+      const interaction = makeInteraction({ pubkey: otherPubkey });
+      expect(() => interaction.parse(FIXTURE.signedMessages.bip137)).toThrow(
+        expect.objectContaining({
+          name: "MessageSigningError",
+          kind: "MalformedResponse",
+          keystore: "bcur2",
+        }),
+      );
+    });
+  });
+
 });
