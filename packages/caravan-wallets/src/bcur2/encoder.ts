@@ -12,15 +12,6 @@ import { Bytes, CryptoPSBT, RegistryItem } from "@keystonehq/bc-ur-registry";
 export type RegistryItemFactory = (buffer: Buffer) => RegistryItem;
 
 /**
- * Single-QR text-mode capacity ceiling, measured in UTF-8 encoded
- * bytes. Byte-mode QR v15 holds ~535 bytes at error-correction level L;
- * cap below that with margin so callers can't silently produce a
- * "text" payload that no scanner can decode. Non-ASCII characters
- * count for more than one byte each.
- */
-export const BCUR2_TEXT_MAX_LENGTH = 500;
-
-/**
  * Class for encoding Bitcoin transaction data into BCUR2 QR codes.
  * Supports encoding of:
  * - PSBT: Partially Signed Bitcoin Transactions in base64 format
@@ -50,8 +41,9 @@ export class BCUR2Encoder {
    * @param maxFragmentLength - Maximum length of each QR code fragment (default: 100).
    *                            Ignored for `"text"` mode (single-frame, no fragmentation).
    * @param registyType - Wire format selection. `"text"` emits `data` verbatim into a
-   *                      single QR with no UR framing; throws if `data.length` exceeds
-   *                      single-QR byte-mode capacity (`BCUR2_TEXT_MAX_LENGTH`).
+   *                      single QR with no UR framing. Upstream policy
+   *                      (`@caravan/messages` `MAX_MESSAGE_BYTES`) bounds the
+   *                      payload size before it reaches the encoder.
    */
   constructor(
     data: string,
@@ -70,19 +62,12 @@ export class BCUR2Encoder {
         this._buffer = Buffer.from(data.trim(), "utf8");
         this.registryItemFactory = (buffer) => new Bytes(buffer);
         break;
-      case "text": {
-        const byteLength = Buffer.byteLength(data, "utf8");
-        if (byteLength > BCUR2_TEXT_MAX_LENGTH) {
-          throw new Error(
-            `Text-mode payload exceeds single-QR capacity (${byteLength} > ${BCUR2_TEXT_MAX_LENGTH} bytes).`,
-          );
-        }
+      case "text":
         // No `_buffer` / `registryItemFactory` assignment: text mode
         // skips the UR registry entirely and `qrFragments` /
         // `estimateFragmentCount` short-circuit before the private
         // `encoder` getter is ever called.
         break;
-      }
       default:
         throw new Error(`Unsupported registry type: ${registyType}`);
     }
@@ -107,19 +92,9 @@ export class BCUR2Encoder {
   }
 
   /**
-   * Sets new data to encode. For `"text"` mode, the same single-QR
-   * capacity ceiling applied at construction is enforced here so that
-   * later reassignments cannot smuggle in an oversized payload.
+   * Sets new data to encode.
    */
   set data(data: string) {
-    if (this._registryType === "text") {
-      const byteLength = Buffer.byteLength(data, "utf8");
-      if (byteLength > BCUR2_TEXT_MAX_LENGTH) {
-        throw new Error(
-          `Text-mode payload exceeds single-QR capacity (${byteLength} > ${BCUR2_TEXT_MAX_LENGTH} bytes).`,
-        );
-      }
-    }
     this._data = data;
   }
 

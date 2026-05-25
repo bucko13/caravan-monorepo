@@ -1,4 +1,4 @@
-import { BCUR2Encoder, BCUR2_TEXT_MAX_LENGTH } from "../encoder";
+import { BCUR2Encoder } from "../encoder";
 
 // Simple unit tests focused on dependency injection patterns
 describe("BCUR2Encoder Dependency Injection", () => {
@@ -129,39 +129,13 @@ describe("BCUR2Encoder Dependency Injection", () => {
       expect(encoder.qrFragments[0]).toBe(payload);
     });
 
-    it("throws when payload exceeds single-QR capacity", () => {
-      const oversized = "x".repeat(BCUR2_TEXT_MAX_LENGTH + 1);
-
-      expect(() => new BCUR2Encoder(oversized, 100, "text")).toThrow(
-        /exceeds single-QR capacity/,
-      );
-    });
-
-    it("accepts a payload exactly at the capacity ceiling", () => {
-      const atLimit = "x".repeat(BCUR2_TEXT_MAX_LENGTH);
-
-      const encoder = new BCUR2Encoder(atLimit, 100, "text");
-
-      expect(encoder.qrFragments[0]).toHaveLength(BCUR2_TEXT_MAX_LENGTH);
-    });
-
-    it("rejects a reassignment that exceeds capacity", () => {
+    it("allows data reassignment", () => {
       const encoder = new BCUR2Encoder("short", 100, "text");
 
-      expect(() => {
-        encoder.data = "x".repeat(BCUR2_TEXT_MAX_LENGTH + 1);
-      }).toThrow(/exceeds single-QR capacity/);
-      expect(encoder.data).toBe("short");
-    });
+      encoder.data = "replaced";
 
-    it("allows reassignment within capacity", () => {
-      const encoder = new BCUR2Encoder("short", 100, "text");
-      const replacement = "x".repeat(BCUR2_TEXT_MAX_LENGTH);
-
-      encoder.data = replacement;
-
-      expect(encoder.data).toBe(replacement);
-      expect(encoder.qrFragments).toEqual([replacement]);
+      expect(encoder.data).toBe("replaced");
+      expect(encoder.qrFragments).toEqual(["replaced"]);
     });
 
     it("encodePSBT() throws on a text-mode encoder", () => {
@@ -169,18 +143,6 @@ describe("BCUR2Encoder Dependency Injection", () => {
 
       expect(() => encoder.encodePSBT()).toThrow(
         /encodePSBT called on a "text"-mode encoder/,
-      );
-    });
-
-    it("measures capacity in UTF-8 bytes, not UTF-16 code units", () => {
-      // Each "€" is 3 bytes in UTF-8 but 1 code unit in UTF-16. A
-      // string of 200 euro signs is 200 code units (below the 500
-      // ceiling in JS string length) but 600 bytes (above the QR
-      // byte-mode ceiling).
-      const oversized = "€".repeat(200);
-      expect(oversized.length).toBeLessThanOrEqual(BCUR2_TEXT_MAX_LENGTH);
-      expect(() => new BCUR2Encoder(oversized, 100, "text")).toThrow(
-        /exceeds single-QR capacity/,
       );
     });
   });

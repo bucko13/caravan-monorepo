@@ -1,7 +1,6 @@
 import {
   type MessageSigningErrorKind,
   MessageSigningError,
-  verifyMessageSignature,
 } from "@caravan/messages";
 
 /**
@@ -67,23 +66,3 @@ export function wrapSdkError(
   });
 }
 
-/**
- * Throw `MalformedResponse` if the signature a device just produced
- * doesn't recover to the cosigner pubkey at the path we asked it to
- * sign at. Surfaces "wrong wallet loaded" / "firmware bug" failures
- * at the keystore boundary, before the SignMessageResult escapes to a downstream
- * consumer that would see only a silent verify=false.
- */
-export function assertSignatureVerifies(
-  keystore: string,
-  args: { message: string; signature: string; pubkey: string },
-): void {
-  if (!verifyMessageSignature(args)) {
-    throw new MessageSigningError({
-      kind: "MalformedResponse",
-      keystore,
-      userMessage:
-        "Device returned a signature that doesn't verify against the cosigner pubkey at this path.",
-    });
-  }
-}

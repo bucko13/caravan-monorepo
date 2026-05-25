@@ -10,14 +10,16 @@ coordinator's `/#/test` BCUR2 suite now includes message-signing tests.
 
 Device support:
 
-- **Jade (QR mode)**: supported — source-verified.
-- **Keystone3**: supported — source-verified.
+- **Jade (QR mode)**: supported — hardware-verified end-to-end.
+- **Keystone3**: source-verified only. Firmware source documents the
+  Specter ASCII signmessage path; not yet exercised on a physical
+  device.
 - **SeedSigner**: requires firmware with PR #874 merged or a fork.
   Mainline rejects BIP-48 cosigner paths in the on-board path parser.
-- **Foundation Passport**: untested. The Specter parser is documented
-  in firmware sources, but the QR-decode → parser call chain and the
-  signature-header behavior on `m/48'` paths have not been
-  hardware-verified.
+- **Foundation Passport**: source-only. The Specter parser is
+  documented in firmware sources, but the QR-decode → parser call
+  chain and the signature-header behavior on `m/48'` paths have not
+  been hardware-verified.
 
 Messages are restricted to printable ASCII (0x20–0x7E) at construction
 because device-side text parsers reject UTF-8.

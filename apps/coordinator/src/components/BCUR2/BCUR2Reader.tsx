@@ -27,10 +27,12 @@ interface BCUR2ReaderPSBTProps extends BCUR2ReaderBaseProps {
 }
 
 // Plain-text mode: forwards the first non-empty raw QR scan to onSuccess
-// without going through BCUR2Decoder. Required for airgap sign-message
-// flows where devices respond with a bare base64 signature (no UR framing).
-// No `network` prop — text mode bypasses the decoder and has no
-// network-dependent behavior.
+// without going through BCUR2Decoder. Required for airgap flows where the
+// device's response is a single bare payload with no UR framing
+// (sign-message today; other plain-text exchanges in the future).
+// Callers own the semantics of the payload — supply `startText` to label
+// what is being scanned. No `network` prop — text mode bypasses the
+// decoder and has no network-dependent behavior.
 interface BCUR2ReaderTextProps extends BCUR2ReaderBaseProps {
   mode: "text";
   onSuccess: (text: string) => void;
@@ -197,7 +199,7 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
     if (props.mode === "xpub") {
       return "Scan the QR code sequence from your device to import the extended public key.";
     } else if (props.mode === "text") {
-      return "Scan the signed-message QR code from your device.";
+      return "Scan the QR code from your device.";
     } else {
       return "Scan the signed PSBT QR code sequence from your device.";
     }

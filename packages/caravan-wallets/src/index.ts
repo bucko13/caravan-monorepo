@@ -103,17 +103,6 @@ export {
   type SignMessageResult,
 } from "@caravan/messages";
 
-// Specter Desktop sign-message wire-format helpers. Reusable across any
-// Specter-compatible transport (BCUR2 today; direct Specter-API or other
-// airgap-QR signers in the future). Cryptographic verification lives in
-// @caravan/messages and is intentionally not bundled here.
-export {
-  encodeSignmessageRequest,
-  isPrintableAscii,
-  MAX_SIGNATURE_LENGTH,
-  parseSignmessageResponse,
-} from "./bcur2/signmessage";
-
 /**
  * Keystores which support direct interactions.
  */

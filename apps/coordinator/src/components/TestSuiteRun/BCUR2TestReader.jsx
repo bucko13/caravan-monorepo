@@ -25,8 +25,17 @@ const selectMode = (test) => {
     );
   }
   if (isPsbt) return "psbt";
-  if (isSignMessage) return "text";
+  if (isSignMessage) return "message";
   return "xpub";
+};
+
+// Test-level mode → underlying BCUR2Reader transport mode. "message" is
+// the semantic name surfaced here; on the wire it rides the reader's
+// generic "text" mode (single raw-QR scan, no UR framing).
+const READER_MODE = {
+  psbt: "psbt",
+  message: "text",
+  xpub: "xpub",
 };
 
 const BCUR2TestReader = ({ test, onStart, onResolve, onError, onReset }) => {
@@ -47,7 +56,7 @@ const BCUR2TestReader = ({ test, onStart, onResolve, onError, onReset }) => {
       startText = "Scan the Signed PSBT QR Code Sequence";
       onSuccess = parseAndResolve;
       break;
-    case "text":
+    case "message":
       startText = "Scan the Signed Message QR Code";
       onSuccess = parseAndResolve;
       break;
@@ -56,15 +65,12 @@ const BCUR2TestReader = ({ test, onStart, onResolve, onError, onReset }) => {
       onSuccess = onResolve;
       break;
     default:
-      // Exhaustiveness guard. `selectMode` is the single source of
-      // truth; if a new mode is added there, this branch surfaces the
-      // gap rather than silently mis-classifying.
       throw new Error(`Unhandled BCUR2 test mode: ${mode}`);
   }
 
   // `network` is required for xpub mode (used to decode the UR xpub
-  // payload) and ignored by both PSBT and text modes. Only thread it
-  // through where the reader will actually use it.
+  // payload) and ignored by the other modes. Only thread it through
+  // where the reader will actually use it.
   const networkProp =
     mode === "xpub" ? { network: test.interaction().network } : {};
 
@@ -75,7 +81,7 @@ const BCUR2TestReader = ({ test, onStart, onResolve, onError, onReset }) => {
         onSuccess={onSuccess}
         onClear={onReset}
         startText={startText}
-        mode={mode}
+        mode={READER_MODE[mode]}
         {...networkProp}
       />
     </Box>

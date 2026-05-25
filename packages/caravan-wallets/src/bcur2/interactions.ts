@@ -11,16 +11,17 @@ import {
   parseSignaturesFromPSBT,
 } from "@caravan/bitcoin";
 import {
+  assertSignatureVerifies,
+  encodeSignmessageRequest,
+  isPrintableAscii,
   MessageSigningError,
+  parseSignmessageResponse,
   type SignMessageResult,
 } from "@caravan/messages";
 import { MultisigWalletConfig } from "@caravan/multisig";
 
 import { ColdcardMultisigWalletConfig, ConfigAdapter } from "..";
-import {
-  assertSignatureVerifies,
-  wrapAsMessageSigningError,
-} from "../errors";
+import { wrapAsMessageSigningError } from "../errors";
 import {
   IndirectKeystoreInteraction,
   PENDING,
@@ -30,11 +31,6 @@ import {
 
 import { BCUR2Decoder } from "./decoder";
 import { BCUR2Encoder } from "./encoder";
-import {
-  encodeSignmessageRequest,
-  isPrintableAscii,
-  parseSignmessageResponse,
-} from "./signmessage";
 
 /**
  * Factory function type for creating BCUR2Decoder instances
@@ -644,12 +640,14 @@ export class BCUR2RegisterWalletPolicy extends BCUR2Interaction {
  *
  * Device support:
  *
- *   Jade (QR mode):      supported — source-verified
- *   Keystone3:           supported — source-verified
+ *   Jade (QR mode):      supported — hardware-verified end-to-end
+ *   Keystone3:           source-verified only. Firmware source documents
+ *                        the Specter ASCII signmessage path; not yet
+ *                        exercised on a physical device.
  *   SeedSigner:          requires firmware with PR #874 merged or a
  *                        fork. Mainline rejects BIP-48 cosigner paths
  *                        in the on-board path parser.
- *   Foundation Passport: untested — research documents the Specter
+ *   Foundation Passport: source-only — research documents the Specter
  *                        parser but the QR-decode -> parser call chain
  *                        and the signature-header behavior on m/48'
  *                        paths have not been hardware-verified.
