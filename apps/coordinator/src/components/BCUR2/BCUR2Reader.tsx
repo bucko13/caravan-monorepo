@@ -257,7 +257,25 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
               >
                 <QrReader
                   onResult={handleScan}
-                  constraints={{ facingMode: "environment" }}
+                  constraints={{
+                    facingMode: "environment",
+                    // Default capture is often 640x480; dense base64
+                    // single-frame QRs and tight UR fragments need
+                    // more pixels for reliable decode at hand-held
+                    // distance. UA falls back if 1080p is unavailable.
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    // Without continuous focus the camera locks on
+                    // initialization and won't re-focus as the user
+                    // adjusts distance. Browser may ignore if the
+                    // device doesn't support it.
+                    // `focusMode` isn't in the standard
+                    // MediaTrackConstraintSet TypeScript definition but
+                    // is implemented by Chromium and Safari.
+                    advanced: [
+                      { focusMode: "continuous" } as unknown,
+                    ] as MediaTrackConstraintSet[],
+                  }}
                   containerStyle={{
                     width: "100%",
                     height: "100%",
@@ -265,7 +283,10 @@ const BCUR2Reader: React.FC<BCUR2ReaderProps> = (props) => {
                     justifyContent: "center",
                     alignItems: "center",
                   }}
-                  scanDelay={200}
+                  // Decode every ~50ms (≈20 fps) instead of the prior
+                  // 200ms (5 fps). handleScan early-returns on frames
+                  // with no decoded text, so the overhead is bounded.
+                  scanDelay={50}
                 />
               </Box>
 
