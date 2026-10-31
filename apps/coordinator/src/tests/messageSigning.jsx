@@ -1,7 +1,7 @@
 import React from "react";
 import { TEST_FIXTURES, deriveChildPublicKey } from "@caravan/bitcoin";
 import { verifyMessageSignature } from "@caravan/messages";
-import { SignMessage } from "@caravan/wallets";
+import { BCUR2, SignMessage } from "@caravan/wallets";
 import { Box, Table, TableBody, TableRow, TableCell } from "@mui/material";
 
 import Test from "./Test";
@@ -129,6 +129,15 @@ export function messageSigningTests(keystore) {
       fixture.network,
     );
 
+    // The BCUR2 keystore family covers airgap QR signers. The test
+    // runner reuses the BCUR2 PSBT-signing UI pieces (BCUR2Encoder /
+    // BCUR2Reader) for sign-message flows; these flags gate the QR
+    // display + reader and discriminate the reader's text-mode branch
+    // inside BCUR2TestReader. They are no-ops for direct-transport
+    // keystores (Ledger, Trezor, Jade, BitBox) and for Coldcard's
+    // SD-card flow.
+    const isBcur2 = keystore === BCUR2;
+
     return new MessageSigningTest({
       keystore,
       network: fixture.network,
@@ -136,6 +145,9 @@ export function messageSigningTests(keystore) {
       bip32Path: fixture.bip32Path,
       message: DEFAULT_MESSAGE,
       pubkey,
+      showQrDisplay: isBcur2,
+      showQrReader: isBcur2,
+      signMessage: isBcur2,
     });
   });
 }

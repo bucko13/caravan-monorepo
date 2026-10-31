@@ -10,9 +10,18 @@ import {
   Network,
   parseSignaturesFromPSBT,
 } from "@caravan/bitcoin";
+import {
+  assertSignatureVerifies,
+  encodeSignmessageRequest,
+  isPrintableAscii,
+  MessageSigningError,
+  parseSignmessageResponse,
+  type SignMessageResult,
+} from "@caravan/messages";
 import { MultisigWalletConfig } from "@caravan/multisig";
 
 import { ColdcardMultisigWalletConfig, ConfigAdapter } from "..";
+import { wrapAsMessageSigningError } from "../errors";
 import {
   IndirectKeystoreInteraction,
   PENDING,
@@ -621,6 +630,167 @@ export class BCUR2RegisterWalletPolicy extends BCUR2Interaction {
       qrCodeFrames: this.qrCodeFrames,
       fragmentCount: this.qrCodeFrames.length,
       maxFragmentLength: this.maxFragmentLength,
+    };
+  }
+}
+
+/**
+ * Per-cosigner message signing for airgap signers that consume the
+ * Specter Desktop ASCII sign-message format over QR.
+ *
+ * Device support:
+ *
+ *   Jade (QR mode):      supported — hardware-verified end-to-end
+ *   Keystone3:           source-verified only. Firmware source documents
+ *                        the Specter ASCII signmessage path; not yet
+ *                        exercised on a physical device.
+ *   SeedSigner:          requires firmware with PR #874 merged or a
+ *                        fork. Mainline rejects BIP-48 cosigner paths
+ *                        in the on-board path parser.
+ *   Foundation Passport: source-only — research documents the Specter
+ *                        parser but the QR-decode -> parser call chain
+ *                        and the signature-header behavior on m/48'
+ *                        paths have not been hardware-verified.
+ *
+ * Wire format: plain-text QR with no UR framing. Request emits
+ *     signmessage {bip32Path} ascii:{message}
+ * Response is a bare base64 signature. Source-verified devices emit
+ * BIP-137; loose-mode verification handles both BIP-137 and BIP-322
+ * Simple shapes.
+ *
+ * Message must be printable ASCII (0x20-0x7E). Non-ASCII input throws
+ * MessageSigningError kind "MalformedRequest" at construction time.
+ *
+ * The wire format is network-independent (the Specter envelope contains
+ * no network discriminator and devices derive script types from the
+ * BIP-32 path), so no `network` parameter is accepted.
+ */
+export class BCUR2SignMessage extends BCUR2Interaction {
+  private bip32Path: string;
+
+  private message: string;
+
+  private pubkey: string;
+
+  private encoder: BCUR2Encoder;
+
+  constructor({
+    bip32Path,
+    message,
+    pubkey,
+    encoderFactory = (data, maxLen) => new BCUR2Encoder(data, maxLen, "text"),
+  }: {
+    bip32Path: string;
+    message: string;
+    pubkey: string;
+    encoderFactory?: BCUR2EncoderFactory;
+  }) {
+    super();
+
+    if (!isPrintableAscii(message)) {
+      throw new MessageSigningError({
+        kind: "MalformedRequest",
+        keystore: BCUR2,
+        userMessage:
+          "Message must be printable ASCII (0x20-0x7E) for BCUR2 sign-message.",
+      });
+    }
+
+    this.bip32Path = bip32Path;
+    this.message = message;
+    this.pubkey = pubkey;
+
+    const payload = encodeSignmessageRequest({ bip32Path, message });
+    try {
+      // maxFragmentLength is ignored in "text" mode but the factory
+      // signature is BCUR2EncoderFactory for symmetry with PSBT/bytes
+      // call sites.
+      this.encoder = encoderFactory(payload, payload.length);
+    } catch (err) {
+      // BCUR2Encoder throws a plain Error on capacity overflow; wrap
+      // so callers can branch on MessageSigningError.kind.
+      throw wrapAsMessageSigningError({
+        keystore: BCUR2,
+        kind: "MalformedRequest",
+        err,
+      });
+    }
+
+    this.workflow = ["request", "parse"];
+  }
+
+  messages() {
+    const messages = super.messages();
+    messages.push({
+      state: PENDING,
+      level: INFO,
+      code: "bcur2.display_signmessage_qr",
+      text: "Display the QR code to your signing device.",
+    });
+    messages.push({
+      state: PENDING,
+      level: INFO,
+      code: "bcur2.scan_signed_message",
+      text: "Scan the signed-message QR returned by your device.",
+    });
+    return messages;
+  }
+
+  /**
+   * Returns a single static QR frame containing the Specter ASCII
+   * sign-message request. The UI BCUR2Encoder component renders the
+   * QR statically when `qrCodeFrames.length <= 1`.
+   */
+  request(): {
+    instruction: string;
+    qrCodeFrames: string[];
+    fragmentCount: number;
+  } {
+    const qrCodeFrames = this.encoder.qrFragments;
+    return {
+      instruction:
+        "Display this QR code to your signing device, then scan the returned signature.",
+      qrCodeFrames,
+      fragmentCount: qrCodeFrames.length,
+    };
+  }
+
+  /**
+   * Validates the scanned base64 sig envelope, cryptographically
+   * verifies it against the expected pubkey via loose-mode bip322-js,
+   * and returns the canonical SignMessageResult.
+   *
+   * Error-kind mapping:
+   *   MalformedResponse: empty / non-base64 / oversized scans, and
+   *                      signatures that don't recover to the
+   *                      expected pubkey.
+   *   MalformedRequest:  reserved for the constructor; not raised here.
+   *   DeviceRejected / TransportError: not used. The human carries
+   *                      the payload across the airgap; there is no
+   *                      device endpoint to reject or fail.
+   */
+  parse(scanned: string): SignMessageResult {
+    let signature: string;
+    try {
+      signature = parseSignmessageResponse(scanned);
+    } catch (err) {
+      throw wrapAsMessageSigningError({
+        keystore: BCUR2,
+        kind: "MalformedResponse",
+        err,
+      });
+    }
+
+    assertSignatureVerifies(BCUR2, {
+      message: this.message,
+      signature,
+      pubkey: this.pubkey,
+    });
+
+    return {
+      bip32Path: this.bip32Path,
+      signature,
+      pubkey: this.pubkey,
     };
   }
 }

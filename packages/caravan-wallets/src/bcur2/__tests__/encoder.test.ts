@@ -88,16 +88,61 @@ describe("BCUR2Encoder Dependency Injection", () => {
       expect(encoder2.maxFragmentLength).toBe(300);
     });
 
-    it("should encode bytes registry type", () => {
+  });
+
+  describe("Registry Type Selection", () => {
+    it("encodes bytes registry type", () => {
       const encoder = new BCUR2Encoder("placehodler", 21, "bytes");
       const result = encoder.qrFragments;
       expect(result).toBeDefined();
       expect(result.length).toBe(1);
     });
 
-    it("should throws on unknown type", () => {
+    it("throws on unknown registry type", () => {
       expect(() => new BCUR2Encoder("invalid", 21, "other" as any)).toThrow(
         "Unsupported registry type",
+      );
+    });
+  });
+
+  describe("Text Mode", () => {
+    it("emits a single QR frame containing the verbatim input", () => {
+      const payload = "signmessage m/48'/1'/0'/2'/0/0 ascii:hello";
+      const encoder = new BCUR2Encoder(payload, 100, "text");
+
+      expect(encoder.qrFragments).toEqual([payload]);
+      expect(encoder.estimateFragmentCount()).toBe(1);
+    });
+
+    it("ignores maxFragmentLength in text mode", () => {
+      const payload = "x".repeat(300);
+      const encoder = new BCUR2Encoder(payload, 50, "text");
+
+      expect(encoder.qrFragments).toHaveLength(1);
+      expect(encoder.qrFragments[0]).toBe(payload);
+    });
+
+    it("does not strip surrounding whitespace from the payload", () => {
+      const payload = "  signmessage m/0/0 ascii:hi  ";
+      const encoder = new BCUR2Encoder(payload, 100, "text");
+
+      expect(encoder.qrFragments[0]).toBe(payload);
+    });
+
+    it("allows data reassignment", () => {
+      const encoder = new BCUR2Encoder("short", 100, "text");
+
+      encoder.data = "replaced";
+
+      expect(encoder.data).toBe("replaced");
+      expect(encoder.qrFragments).toEqual(["replaced"]);
+    });
+
+    it("encodePSBT() throws on a text-mode encoder", () => {
+      const encoder = new BCUR2Encoder("signmessage m/0/0 ascii:hi", 100, "text");
+
+      expect(() => encoder.encodePSBT()).toThrow(
+        /encodePSBT called on a "text"-mode encoder/,
       );
     });
   });

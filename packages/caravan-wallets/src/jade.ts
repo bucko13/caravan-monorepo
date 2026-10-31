@@ -15,6 +15,7 @@ import {
 } from "@caravan/bitcoin";
 import {
   type SignMessageResult,
+  assertSignatureVerifies,
   MessageSigningError,
 } from "@caravan/messages";
 import {
@@ -32,7 +33,7 @@ import {
   JadeHttpRequestFunction,
 } from "jadets";
 
-import { assertSignatureVerifies, wrapSdkError } from "./errors";
+import { wrapSdkError } from "./errors";
 import {
   DirectKeystoreInteraction,
   PENDING,

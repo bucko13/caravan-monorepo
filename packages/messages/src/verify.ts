@@ -1,5 +1,7 @@
 import { Verifier, Address } from "bip322-js";
 
+import { MessageSigningError } from "./types";
+
 /**
  * Verify a base64 signature against the canonical P2WPKH address
  * derived from `pubkey`. Returns a boolean — never throws.
@@ -31,5 +33,26 @@ export function verifyMessageSignature(args: {
     return Verifier.verifySignature(address, message, signature, false);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Throw `MalformedResponse` if the signature a device just produced
+ * doesn't recover to the cosigner pubkey at the path we asked it to
+ * sign at. Surfaces "wrong wallet loaded" / "firmware bug" failures
+ * at the keystore boundary, before the SignMessageResult escapes to a
+ * downstream consumer that would see only a silent verify=false.
+ */
+export function assertSignatureVerifies(
+  keystore: string,
+  args: { message: string; signature: string; pubkey: string },
+): void {
+  if (!verifyMessageSignature(args)) {
+    throw new MessageSigningError({
+      kind: "MalformedResponse",
+      keystore,
+      userMessage:
+        "Device returned a signature that doesn't verify against the cosigner pubkey at this path.",
+    });
   }
 }

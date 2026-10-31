@@ -37,7 +37,10 @@ import {
   PsbtV2,
   ExtendedPublicKey,
 } from "@caravan/bitcoin";
-import type { SignMessageResult } from "@caravan/messages";
+import {
+  type SignMessageResult,
+  assertSignatureVerifies,
+} from "@caravan/messages";
 import { LegacyInput } from "@caravan/multisig";
 import { translatePSBT } from "@caravan/psbt";
 import LedgerBtc from "@ledgerhq/hw-app-btc";
@@ -48,7 +51,7 @@ import TransportU2F from "@ledgerhq/hw-transport-u2f";
 import TransportWebUSB from "@ledgerhq/hw-transport-webusb";
 import { AppClient, PsbtV2 as LedgerPsbtV2 } from "ledger-bitcoin";
 
-import { assertSignatureVerifies, wrapSdkError } from "./errors";
+import { wrapSdkError } from "./errors";
 import {
   ACTIVE,
   PENDING,

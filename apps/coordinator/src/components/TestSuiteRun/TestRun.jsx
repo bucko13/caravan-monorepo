@@ -31,7 +31,8 @@ import * as errorNotificationActions from "../../actions/errorNotificationAction
 import InteractionMessages from "../InteractionMessages";
 import { TestRunNote } from "./Note";
 import { HermitReader, HermitDisplayer } from "../Hermit";
-import { BCUR2Reader, BCUR2Encoder } from "../BCUR2"; // Import for displaying transaction QR codes
+import { BCUR2Encoder } from "../BCUR2";
+import BCUR2TestReader from "./BCUR2TestReader";
 import {
   ColdcardJSONReader,
   ColdcardPSBTReader,
@@ -282,30 +283,13 @@ Derivation: ${test.params.derivation}
             {keystore.type === BCUR2 &&
               test.params.showQrReader &&
               !this.testComplete() && (
-                <Box>
-                  <BCUR2Reader
-                    onStart={this.start}
-                    onSuccess={
-                      test.unsignedTransaction
-                        ? (psbtData) => {
-                            // For signing tests, we need to parse the PSBT through the interaction
-                            const parsedData = test
-                              .interaction()
-                              .parse(psbtData);
-                            this.resolve(parsedData);
-                          }
-                        : this.resolve
-                    }
-                    onClear={this.reset}
-                    startText={
-                      test.unsignedTransaction
-                        ? "Scan the Signed PSBT QR Code Sequence"
-                        : "Scan the BCUR2 QR Code Sequence"
-                    }
-                    network={test.interaction().network}
-                    mode={test.unsignedTransaction ? "psbt" : "xpub"}
-                  />
-                </Box>
+                <BCUR2TestReader
+                  test={test}
+                  onStart={this.start}
+                  onResolve={this.resolve}
+                  onError={this.handleScanError}
+                  onReset={this.reset}
+                />
               )}
             {this.testComplete() && this.renderResult()}
 
@@ -417,6 +401,13 @@ Derivation: ${test.params.derivation}
     const result = test.resolve(postprocessed);
 
     this.handleResult(result);
+  };
+
+  handleScanError = (err) => {
+    this.handleResult({
+      status: Test.ERROR,
+      message: err instanceof Error ? err.message : String(err),
+    });
   };
 
   handleResult = (result) => {
@@ -540,6 +531,7 @@ TestRunBase.propTypes = {
       extendedPublicKeys: PropTypes.array,
       showQrDisplay: PropTypes.bool,
       showQrReader: PropTypes.bool,
+      signMessage: PropTypes.bool,
     }),
     run: PropTypes.func.isRequired,
     runParse: PropTypes.func.isRequired,

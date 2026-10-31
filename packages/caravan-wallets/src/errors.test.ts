@@ -1,7 +1,7 @@
 import { Network } from "@caravan/bitcoin";
 import { MAX_MESSAGE_BYTES, MessageSigningError } from "@caravan/messages";
 
-import { wrapSdkError } from "./errors";
+import { wrapAsMessageSigningError, wrapSdkError } from "./errors";
 
 import { BITBOX, COLDCARD, JADE, LEDGER, SignMessage, TREZOR } from "./index";
 
@@ -47,6 +47,48 @@ describe("wrapSdkError", () => {
     const wrapped = wrapSdkError("BITBOX", "raw string thrown");
     expect(wrapped.kind).toBe("TransportError");
     expect(wrapped.userMessage).toBe("raw string thrown");
+  });
+});
+
+describe("wrapAsMessageSigningError", () => {
+  it("passes MessageSigningError instances through unchanged", () => {
+    const original = new MessageSigningError({
+      kind: "MalformedResponse",
+      keystore: "BCUR2",
+      userMessage: "bad sig from device",
+    });
+    expect(
+      wrapAsMessageSigningError({
+        keystore: "BCUR2",
+        kind: "MalformedRequest",
+        err: original,
+      }),
+    ).toBe(original);
+  });
+
+  it("wraps a plain Error with the requested kind, preserving cause", () => {
+    const cause = new Error("scanned blob is not base64");
+    const wrapped = wrapAsMessageSigningError({
+      keystore: "BCUR2",
+      kind: "MalformedResponse",
+      err: cause,
+    });
+    expect(wrapped).toBeInstanceOf(MessageSigningError);
+    expect(wrapped.kind).toBe("MalformedResponse");
+    expect(wrapped.keystore).toBe("BCUR2");
+    expect(wrapped.userMessage).toBe("scanned blob is not base64");
+    expect(wrapped.cause).toBe(cause);
+  });
+
+  it("stringifies non-Error throws into userMessage", () => {
+    const wrapped = wrapAsMessageSigningError({
+      keystore: "BCUR2",
+      kind: "MalformedRequest",
+      err: "raw string thrown",
+    });
+    expect(wrapped.kind).toBe("MalformedRequest");
+    expect(wrapped.userMessage).toBe("raw string thrown");
+    expect(wrapped.cause).toBe("raw string thrown");
   });
 });
 
